@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#142B4A">
+<title>Sinapse IA</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box} body{font-family:Inter,system-ui,sans-serif}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;color:#64748b;font-size:14px;font-weight:500;transition:.15s}
+  .nav-item:hover{background:#f1f5f9;color:#142b4a}
+  .nav-item.active{background:#eaf0f7;color:#142b4a;font-weight:700}
+  .btn-primary{background:#142b4a;color:white;border-radius:11px;padding:11px 16px;font-size:13px;font-weight:600;transition:.15s}
+  .btn-primary:hover{background:#1e3a5f}
+  .btn-secondary{background:white;border:1px solid #dbe2ea;color:#334155;border-radius:11px;padding:10px 14px;font-size:13px;font-weight:600}
+  .field{width:100%;border:1px solid #dbe2ea;border-radius:11px;padding:11px 13px;font-size:13px;outline:none;background:white}
+  .field:focus{border-color:#6684a7;box-shadow:0 0 0 3px #eaf0f7}
+  .book-card{transition:.18s;cursor:pointer}.book-card:hover{transform:translateY(-2px);box-shadow:0 10px 25px rgba(15,23,42,.07)}
+  .cover{width:66px;height:92px;border-radius:7px;display:flex;align-items:center;justify-content:center;text-align:center;padding:7px;box-shadow:2px 3px 7px #0f172a22;flex-shrink:0}
+  .modal-backdrop{background:rgba(15,23,42,.42);backdrop-filter:blur(3px)}
+  .mobile-nav{box-shadow:0 -5px 20px rgba(15,23,42,.06)}
+  .hide-scrollbar::-webkit-scrollbar{display:none}
+  @media(min-width:768px){.app-main{margin-left:248px}.sidebar{display:flex}.mobile-nav{display:none}}
+  @media(max-width:767px){.sidebar{display:none}.app-main{margin-left:0}.desktop-only{display:none}}
+</style>
+</head>
+<body class="bg-[#F5F7FA] text-slate-800 min-h-screen">
+<div id="sidebar" class="sidebar fixed inset-y-0 left-0 z-30 w-[248px] bg-white border-r border-slate-200/80 flex-col px-5 py-6">
+  <div class="flex items-center gap-3 px-2 mb-10">
+    <div class="w-10 h-10 rounded-xl bg-[#142B4A] flex items-center justify-center text-white">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3.5a3 3 0 0 0-3 3v.3a3.2 3.2 0 0 0-1.2 6.1A3.2 3.2 0 0 0 7 18.5h2M15 3.5a3 3 0 0 1 3 3v.3a3.2 3.2 0 0 1 1.2 6.1A3.2 3.2 0 0 1 17 18.5h-2M12 3v18M8.5 8.5 12 11l3.5-2.5M8.5 15.5 12 13l3.5 2.5"/></svg>
+    </div>
+    <div><div class="font-extrabold tracking-tight text-[#142B4A] text-lg">Sinapse IA</div><div class="text-[10px] tracking-[.16em] text-slate-400 uppercase">Conhecimento conectado</div></div>
+  </div>
+  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-[.16em] px-3 mb-2">Workspace</div>
+  <nav class="space-y-1">
+    <button class="nav-item active w-full" data-view="home"><span>⌂</span> Início</button>
+    <button class="nav-item w-full" data-view="library"><span>▤</span> Biblioteca</button>
+    <button class="nav-item w-full" data-view="knowledge"><span>✳</span> Conhecimentos</button>
+    <button class="nav-item w-full" data-view="connections"><span>⌘</span> Conexões</button>
+    <button class="nav-item w-full" data-view="review"><span>◷</span> Revisão</button>
+    <button class="nav-item w-full" data-view="assistant"><span>✧</span> Assistente IA</button>
+  </nav>
+  <div class="mt-auto">
+    <div class="rounded-2xl bg-[#F4F7FB] p-4 mb-4">
+      <div class="text-xs font-bold text-[#142B4A] mb-1">Seu conhecimento em construção</div>
+      <p class="text-[11px] text-slate-500 leading-relaxed">Cada leitura é uma oportunidade de construir novas conexões.</p>
+    </div>
+    <button class="nav-item w-full" data-view="settings"><span>⚙</span> Configurações</button>
+    <div class="mt-4 border-t border-slate-100 pt-4 px-3 flex items-center gap-3">
+      <div class="w-9 h-9 rounded-full bg-[#E7EDF5] text-[#142B4A] flex items-center justify-center text-xs font-bold">TH</div>
+      <div><div class="text-xs font-semibold text-slate-700">Minha conta</div><div class="text-[10px] text-slate-400">Versão de demonstração</div></div>
+    </div>
+  </div>
+</div>
+
+<main class="app-main min-h-screen pb-24 md:pb-8">
+  <header class="h-[72px] bg-white/90 border-b border-slate-200/80 flex items-center justify-between px-5 md:px-9 sticky top-0 z-20 backdrop-blur">
+    <div class="flex items-center gap-3">
+      <button id="mobileMenu" class="md:hidden text-slate-500 text-xl">☰</button>
+      <div class="text-xs text-slate-400">Sinapse IA <span class="mx-1">/</span> <span id="breadcrumb" class="text-slate-600 font-semibold">Início</span></div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="hidden sm:inline text-[11px] text-slate-400">MVP 0.1</span>
+      <button class="w-9 h-9 rounded-full border border-slate-200 text-slate-500" title="Notificações">♧</button>
+      <div class="w-9 h-9 rounded-full bg-[#E7EDF5] text-[#142B4A] flex items-center justify-center text-xs font-bold">TH</div>
+    </div>
+  </header>
+  <div id="content" class="max-w-[1250px] mx-auto px-5 md:px-9 py-8"></div>
+</main>
+
+<nav class="mobile-nav fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-30 md:hidden px-2 py-2 flex justify-around">
+  <button data-view="home" class="mobile-item flex flex-col items-center gap-1 text-[#142B4A] text-[10px] font-semibold px-3"><span class="text-lg">⌂</span>Início</button>
+  <button data-view="library" class="mobile-item flex flex-col items-center gap-1 text-slate-400 text-[10px] px-3"><span class="text-lg">▤</span>Biblioteca</button>
+  <button id="mobileAdd" class="flex flex-col items-center gap-1 text-slate-400 text-[10px] px-3"><span class="w-9 h-9 -mt-5 rounded-full bg-[#142B4A] text-white text-2xl flex items-center justify-center shadow-lg">+</span>Adicionar</button>
+  <button data-view="knowledge" class="mobile-item flex flex-col items-center gap-1 text-slate-400 text-[10px] px-3"><span class="text-lg">✳</span>Conhecimentos</button>
+  <button data-view="settings" class="mobile-item flex flex-col items-center gap-1 text-slate-400 text-[10px] px-3"><span class="text-lg">⋯</span>Mais</button>
+</nav>
+
+<div id="modalRoot"></div>
+<div id="toast" class="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-xl opacity-0 pointer-events-none transition z-50"></div>
+
+<script>
+const KEY='sinapse-mvp-books-v01';
+let books=readBooks(), currentView='home', selectedBook=null;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function readBooks(){try{return JSON.parse(localStorage.getItem(KEY))||[]}catch{return[]}}
+function persist(){localStorage.setItem(KEY,JSON.stringify(books))}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.remove('opacity-0');setTimeout(()=>t.classList.add('opacity-0'),2300)}
+function dateLabel(v){return new Date(v).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}
+const statusLabel={want:'Quero ler',reading:'Lendo',paused:'Pausado',done:'Concluído'};
+const statusClass={want:'bg-slate-100 text-slate-600',reading:'bg-blue-50 text-blue-700',paused:'bg-amber-50 text-amber-700',done:'bg-emerald-50 text-emerald-700'};
+function setView(v){currentView=v;selectedBook=null;render();window.scrollTo(0,0)}
+function setActive(){document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===currentView));document.querySelectorAll('.mobile-item').forEach(b=>{b.classList.toggle('text-[#142B4A]',b.dataset.view===currentView);b.classList.toggle('text-slate-400',b.dataset.view!==currentView)})}
+function bookCard(b){return `<article class="book-card bg-white border border-slate-200/80 rounded-2xl p-4 flex gap-4" onclick="openBook('${b.id}')">
+  <div class="cover" style="background:${esc(b.coverColor||'#E7EDF5')};color:${esc(b.coverText||'#142B4A')}"><span class="text-[10px] font-bold leading-tight">${esc((b.title||'Livro').slice(0,48))}</span></div>
+  <div class="min-w-0 flex-1">
+    <div class="flex items-start justify-between gap-2"><h3 class="font-bold text-sm text-slate-800 leading-snug">${esc(b.title)}</h3><span class="text-slate-300">⋯</span></div>
+    <p class="text-xs text-slate-500 mt-1">${esc(b.author||'Autor não informado')}</p>
+    <div class="mt-3 flex items-center gap-2 flex-wrap"><span class="text-[10px] rounded-full px-2 py-1 ${statusClass[b.status]}">${statusLabel[b.status]}</span><span class="text-[10px] text-slate-400">${(b.chapters||[]).length} capítulos</span></div>
+  </div></article>`}
+function render(){
+  setActive();
+  const titles={home:'Início',library:'Biblioteca',knowledge:'Conhecimentos',connections:'Conexões',review:'Revisão',assistant:'Assistente IA',settings:'Configurações',book:'Livro'};
+  $('#breadcrumb').textContent=titles[currentView]||'Início';
+  const c=$('#content');
+  if(currentView==='home') c.innerHTML=homeView();
+  else if(currentView==='library') c.innerHTML=libraryView();
+  else if(currentView==='book') c.innerHTML=bookView();
+  else if(currentView==='knowledge') c.innerHTML=placeholder('Conhecimentos','Aqui serão reunidas as anotações de todos os seus livros, organizadas pelas quatro categorias.','✳');
+  else if(currentView==='connections') c.innerHTML=placeholder('Conexões','Em uma próxima etapa, o Sinapse IA identificará relações entre seus aprendizados.','⌘');
+  else if(currentView==='review') c.innerHTML=placeholder('Revisão','Aqui você poderá revisar seus aprendizados e testar o que reteve.','◷');
+  else if(currentView==='assistant') c.innerHTML=placeholder('Assistente IA','Em uma próxima etapa, você poderá conversar com a IA sobre os conhecimentos registrados na sua biblioteca.','✧');
+  else if(currentView==='settings') c.innerHTML=placeholder('Configurações','Preferências da conta, privacidade e gerenciamento dos seus dados serão configurados nesta área.','⚙');
+}
+function homeView(){
+ const reading=books.filter(b=>b.status==='reading'), totalCh=books.reduce((n,b)=>n+(b.chapters||[]).length,0);
+ return `<div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+  <div><div class="text-xs font-semibold text-[#7890AA] uppercase tracking-[.15em] mb-2">Seu espaço de aprendizado</div><h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-[#142B4A]">Conhecimento que se conecta.</h1><p class="text-sm text-slate-500 mt-2">Organize suas leituras e transforme aprendizados em conhecimento.</p></div>
+  <button class="btn-primary flex items-center justify-center gap-2" onclick="openBookModal()">＋ Adicionar livro</button>
+ </div>
+ <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
+  ${stat('▤',books.length,'Livros cadastrados')}${stat('▥',totalCh,'Capítulos criados')}${stat('◷',reading.length,'Livros em leitura')}${stat('✓',books.filter(b=>b.status==='done').length,'Livros concluídos')}
+ </div>
+ <section class="mb-8"><div class="flex items-center justify-between mb-4"><div><h2 class="font-bold text-[#142B4A]">Continue sua leitura</h2><p class="text-xs text-slate-400 mt-1">Acompanhe os livros que está lendo.</p></div><button class="text-xs font-semibold text-[#315779]" onclick="setView('library')">Ver biblioteca →</button></div>
+  ${reading.length?`<div class="grid md:grid-cols-2 gap-3">${reading.slice(0,4).map(bookCard).join('')}</div>`:`<div class="bg-white border border-dashed border-slate-300 rounded-2xl p-7 text-center"><div class="w-11 h-11 rounded-xl bg-[#EEF3F8] text-[#315779] mx-auto flex items-center justify-center text-xl mb-3">▤</div><h3 class="text-sm font-semibold text-slate-700">Sua jornada começa com um livro</h3><p class="text-xs text-slate-400 mt-1 mb-4">Cadastre uma leitura para começar a organizar seus aprendizados.</p><button class="btn-secondary" onclick="openBookModal()">Adicionar primeiro livro</button></div>`}
+ </section>
+ <section><div class="flex items-center justify-between mb-4"><div><h2 class="font-bold text-[#142B4A]">Adicionados recentemente</h2><p class="text-xs text-slate-400 mt-1">Seus livros mais recentes.</p></div><button class="text-xs font-semibold text-[#315779]" onclick="setView('library')">Abrir biblioteca →</button></div>
+ ${books.length?`<div class="grid md:grid-cols-2 gap-3">${[...books].sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,4).map(bookCard).join('')}</div>`:`<div class="text-xs text-slate-400 py-3">Nenhum livro cadastrado ainda.</div>`}
+ </section>`;
+}
+function stat(icon,value,label){return `<div class="bg-white border border-slate-200/80 rounded-2xl p-4"><div class="text-[#7890AA] text-lg mb-2">${icon}</div><div class="text-2xl font-extrabold text-[#142B4A]">${value}</div><div class="text-[11px] text-slate-400 mt-1">${label}</div></div>`}
+function libraryView(){
+ return `<div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-7"><div><div class="text-xs font-semibold text-[#7890AA] uppercase tracking-[.15em] mb-2">Suas leituras</div><h1 class="text-2xl font-extrabold text-[#142B4A]">Biblioteca</h1><p class="text-sm text-slate-500 mt-1">Seus livros em um só lugar.</p></div><button class="btn-primary" onclick="openBookModal()">＋ Adicionar livro</button></div>
+ <div class="bg-white border border-slate-200 rounded-2xl p-3 mb-5 flex flex-col sm:flex-row gap-3"><input id="bookSearch" class="field" placeholder="Buscar por título ou autor..." oninput="filterBooks(this.value)"><select id="statusFilter" class="field sm:max-w-[190px]" onchange="filterBooks($('#bookSearch').value)"><option value="">Todos os status</option><option value="want">Quero ler</option><option value="reading">Lendo</option><option value="paused">Pausado</option><option value="done">Concluído</option></select></div>
+ <div id="bookGrid" class="grid md:grid-cols-2 xl:grid-cols-3 gap-3">${books.length?books.map(bookCard).join(''):`<div class="col-span-full bg-white border border-dashed border-slate-300 rounded-2xl p-12 text-center"><div class="text-3xl mb-3 text-slate-300">▤</div><h3 class="font-semibold text-slate-700 text-sm">Sua biblioteca está vazia</h3><p class="text-xs text-slate-400 mt-1 mb-4">Adicione seu primeiro livro para começar.</p><button class="btn-primary" onclick="openBookModal()">Adicionar livro</button></div>`}</div>`;
+}
+function filterBooks(q){const term=(q||'').toLowerCase(),status=$('#statusFilter')?.value||'';const filtered=books.filter(b=>(!term||(b.title+' '+(b.author||'')).toLowerCase().includes(term))&&(!status||b.status===status));$('#bookGrid').innerHTML=filtered.length?filtered.map(bookCard).join(''):`<div class="col-span-full text-center text-xs text-slate-400 py-10">Nenhum livro encontrado.</div>`}
+function openBook(id){selectedBook=books.find(b=>b.id===id);if(!selectedBook)return;currentView='book';render();window.scrollTo(0,0)}
+function bookView(){
+ const b=selectedBook||books.find(x=>x.id===selectedBook?.id);if(!b){currentView='library';return libraryView()}
+ return `<button class="text-xs font-semibold text-slate-500 mb-5" onclick="setView('library')">← Voltar para biblioteca</button>
+ <div class="bg-white border border-slate-200 rounded-2xl p-5 md:p-7 mb-6"><div class="flex flex-col sm:flex-row gap-5"><div class="cover !w-[88px] !h-[124px]" style="background:${esc(b.coverColor||'#E7EDF5')};color:${esc(b.coverText||'#142B4A')}"><span class="text-xs font-bold">${esc(b.title)}</span></div><div class="flex-1"><div class="flex flex-wrap gap-2 items-center mb-2"><span class="text-[10px] rounded-full px-2 py-1 ${statusClass[b.status]}">${statusLabel[b.status]}</span><span class="text-[10px] text-slate-400">Adicionado em ${dateLabel(b.createdAt)}</span></div><h1 class="text-xl md:text-2xl font-extrabold text-[#142B4A]">${esc(b.title)}</h1><p class="text-sm text-slate-500 mt-1">${esc(b.author||'Autor não informado')}</p>${b.description?`<p class="text-xs text-slate-500 mt-3 leading-relaxed">${esc(b.description)}</p>`:''}<div class="flex gap-2 mt-4"><button class="btn-secondary" onclick="openBookModal('${b.id}')">Editar livro</button><button class="btn-secondary" onclick="deleteBook('${b.id}')">Excluir</button></div></div></div></div>
+ <div class="flex items-center justify-between mb-4"><div><h2 class="font-bold text-[#142B4A]">Capítulos e temas</h2><p class="text-xs text-slate-400 mt-1">Adicione conforme avança na leitura.</p></div><button class="btn-primary" onclick="addChapter('${b.id}')">＋ Adicionar capítulo</button></div>
+ ${(b.chapters||[]).length?`<div class="space-y-2">${b.chapters.map((ch,i)=>`<div class="bg-white border border-slate-200 rounded-xl p-4"><div class="font-semibold text-sm">${String(i+1).padStart(2,'0')} — ${esc(ch.title)}</div>${ch.summary?`<p class="text-xs text-slate-500 mt-2">${esc(ch.summary)}</p>`:''}</div>`).join('')}</div>`:`<div class="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center"><div class="text-2xl text-slate-300 mb-2">☷</div><p class="text-sm font-semibold text-slate-600">Nenhum capítulo cadastrado</p><p class="text-xs text-slate-400 mt-1">Você pode registrar aprendizados primeiro e organizar depois.</p></div>`}
+ <div class="mt-7 bg-[#F0F4F8] rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><div class="font-bold text-sm text-[#142B4A]">Pronto para registrar um aprendizado?</div><p class="text-xs text-slate-500 mt-1">As anotações serão adicionadas em uma próxima evolução.</p></div><button class="btn-secondary opacity-60 cursor-not-allowed" disabled>＋ Nova anotação</button></div>`;
+}
+function placeholder(title,desc,icon){return `<div class="max-w-3xl"><div class="w-12 h-12 rounded-2xl bg-[#EAF0F7] text-[#315779] flex items-center justify-center text-2xl mb-5">${icon}</div><div class="text-xs font-semibold text-[#7890AA] uppercase tracking-[.15em] mb-2">Em construção</div><h1 class="text-2xl font-extrabold text-[#142B4A]">${title}</h1><p class="text-sm text-slate-500 mt-2 max-w-xl leading-relaxed">${desc}</p><div class="mt-7 bg-white border border-slate-200 rounded-2xl p-5"><div class="text-xs font-bold text-slate-600 mb-2">Esta área será ativada nas próximas versões</div><p class="text-xs text-slate-400 leading-relaxed">Estamos construindo o Sinapse IA por etapas. Seus recursos serão adicionados e testados progressivamente.</p></div></div>`}
+function openBookModal(id=''){
+ const b=id?books.find(x=>x.id===id):null;
+ $('#modalRoot').innerHTML=`<div class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)closeModal()"><div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[92vh] overflow-y-auto"><div class="p-5 border-b border-slate-100 flex items-center justify-between"><div><h2 class="font-bold text-[#142B4A]">${b?'Editar livro':'Adicionar livro'}</h2><p class="text-[11px] text-slate-400 mt-1">Cadastre apenas as informações que você tiver.</p></div><button onclick="closeModal()" class="text-slate-400 text-xl">×</button></div><form id="bookForm" class="p-5 space-y-4" onsubmit="saveBook(event,'${id}')">
+ <div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Título do livro *</label><input name="title" required maxlength="140" class="field" placeholder="Nome do livro" value="${esc(b?.title||'')}"></div>
+ <div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Autor</label><input name="author" maxlength="100" class="field" placeholder="Nome do autor" value="${esc(b?.author||'')}"></div>
+ <div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Categoria</label><input name="category" maxlength="70" class="field" placeholder="Ex.: Liderança, negócios, história" value="${esc(b?.category||'')}"></div>
+ <div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Descrição</label><textarea name="description" rows="3" class="field resize-y" placeholder="Descrição opcional">${esc(b?.description||'')}</textarea></div>
+ <div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Status de leitura</label><select name="status" class="field"><option value="want" ${b?.status==='want'?'selected':''}>Quero ler</option><option value="reading" ${!b||b.status==='reading'?'selected':''}>Lendo</option><option value="paused" ${b?.status==='paused'?'selected':''}>Pausado</option><option value="done" ${b?.status==='done'?'selected':''}>Concluído</option></select></div>
+ <div class="flex justify-end gap-2 pt-2"><button type="button" class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" type="submit">Salvar livro</button></div></form></div></div>`;
+}
+function closeModal(){$('#modalRoot').innerHTML=''}
+function saveBook(e,id){e.preventDefault();const f=new FormData(e.target),data={title:f.get('title').trim(),author:f.get('author').trim(),category:f.get('category').trim(),description:f.get('description').trim(),status:f.get('status')};if(!data.title)return;if(id){const b=books.find(x=>x.id===id);Object.assign(b,data,{updatedAt:new Date().toISOString()});toast('Livro atualizado')}else{books.unshift({...data,id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),chapters:[],coverColor:['#E7EDF5','#E9E5F4','#E5EEE9','#F3E9DE'][Math.floor(Math.random()*4)],coverText:'#142B4A',createdAt:new Date().toISOString()});toast('Livro adicionado à biblioteca')}persist();closeModal();render()}
+function addChapter(id){const title=prompt('Nome do capítulo ou tema:');if(!title||!title.trim())return;const b=books.find(x=>x.id===id);b.chapters=b.chapters||[];b.chapters.push({id:String(Date.now()),title:title.trim(),summary:''});persist();selectedBook=b;render();toast('Capítulo adicionado')}
+function deleteBook(id){if(!confirm('Excluir este livro? Esta ação não poderá ser desfeita.'))return;books=books.filter(b=>b.id!==id);persist();setView('library');toast('Livro excluído')}
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
+$('#mobileAdd').addEventListener('click',()=>openBookModal());
+$('#mobileMenu').addEventListener('click',()=>toast('Use a navegação inferior para acessar as áreas.'));
+render();
+</script>
+</body>
+</html>
