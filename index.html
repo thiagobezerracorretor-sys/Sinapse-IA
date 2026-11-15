@@ -117,6 +117,11 @@
 <script>
 const KEY='sinapse-mvp-books-v01';
 const CONNECTION_KEY='sinapse-mvp-connections-v01';
+const DELETED_KEY='sinapse-mvp-deleted-v01';
+function readDeleted(){try{const d=JSON.parse(localStorage.getItem(DELETED_KEY))||{};return{books:d.books||[],chapters:d.chapters||[],subtopics:d.subtopics||[],notes:d.notes||[],connections:d.connections||[],reading_history:d.reading_history||[]}}catch{return{books:[],chapters:[],subtopics:[],notes:[],connections:[],reading_history:[]}}}
+function persistDeleted(){localStorage.setItem(DELETED_KEY,JSON.stringify(deleted))}
+function markDeleted(table,id){if(!id)return;if(!deleted[table])deleted[table]=[];if(!deleted[table].includes(id)){deleted[table].push(id);persistDeleted()}}
+let deleted=readDeleted();
 const CATEGORY_KEYWORDS={
  'Desenvolvimento Pessoal':['Mentalidade','Hábitos','Disciplina','Potencial','Mudança'],
  'Psicologia e Comportamento':['Mente','Emoções','Comportamento','Personalidade','Relações'],
@@ -151,28 +156,280 @@ function persistConnections(){localStorage.setItem(CONNECTION_KEY,JSON.stringify
 const cloudError=e=>{if(e)throw e};
 function toBookRow(b){return{id:b.id,user_id:currentUser.id,title:b.title||'',author:b.author||'',category:b.category||'',description:b.description||'',status:b.status||'want',ownership:b.ownership||'owned',cover_image:b._cloudCoverPath||null,cover_color:b.coverColor||null,cover_text:b.coverText||null,rating:b.rating??null,current_page:b.currentPage??null,total_pages:b.totalPages??null,started_at:b.startedAt||null,completed_at:b.completedAt||null,opinion:b.opinion||'',learnings:b.learnings||'',strengths:b.strengths||'',weaknesses:b.weaknesses||'',keywords:b.keywords||[],acquired_at:b.acquiredAt||null,created_at:b.createdAt||new Date().toISOString(),updated_at:b.updatedAt||new Date().toISOString(),last_activity_at:b.lastActivityAt||null}}
 async function uploadBookCover(b){if(!b.coverImage||!b.coverImage.startsWith('data:'))return b._cloudCoverPath||null;const path=currentUser.id+'/'+b.id+'.webp';const blob=await (await fetch(b.coverImage)).blob();const {error}=await supabaseClient.storage.from('book-covers').upload(path,blob,{contentType:blob.type||'image/jpeg',upsert:true});cloudError(error);b._cloudCoverPath=path;return path}
-async function replaceCloudSnapshot(){if(!currentUser||!cloudReady)return;const uid=currentUser.id;
- for(const table of ['connections','notes','subtopics','chapters','reading_history','books']){const {error}=await supabaseClient.from(table).delete().eq('user_id',uid);cloudError(error)}
- const bookRows=[];for(const b of books){const cover=await uploadBookCover(b);const row=toBookRow(b);row.cover_image=cover;bookRows.push(row)}
- if(bookRows.length){const {error}=await supabaseClient.from('books').insert(bookRows);cloudError(error)}
- const chapterRows=[],subRows=[],noteRows=[],historyRows=[],connectionRows=[];
- for(const b of books){for(const h of (b.history||[]))historyRows.push({id:h.id,user_id:uid,book_id:b.id,type:h.type||'activity',details:h.details||'',occurred_at:h.at||h.occurred_at||new Date().toISOString()});for(const c of (b.chapters||[])){chapterRows.push({id:c.id,user_id:uid,book_id:b.id,title:c.title||'',pages:c.pages||'',summary:c.summary||'',understanding:c.understanding||'',learning_question:c.learningQuestion||'',application:c.application||'',topics:c.topics||[],created_at:c.createdAt||new Date().toISOString(),updated_at:c.updatedAt||new Date().toISOString()});for(const n of (c.notes||[]))noteRows.push({id:n.id,user_id:uid,chapter_id:c.id,subtopic_id:null,category:n.category,title:n.title||'',content:n.content||'',pages:n.pages||'',created_at:n.createdAt||new Date().toISOString(),updated_at:n.updatedAt||new Date().toISOString()});for(let i=0;i<(c.subtopics||[]).length;i++){const st=c.subtopics[i];subRows.push({id:st.id,user_id:uid,chapter_id:c.id,title:st.title||'',pages:st.pages||'',summary:st.summary||'',understanding:st.understanding||'',application:st.application||'',color:st.color||'blue',topics:st.topics||[],position:i,created_at:st.createdAt||new Date().toISOString(),updated_at:st.updatedAt||new Date().toISOString()});for(const n of (st.notes||[]))noteRows.push({id:n.id,user_id:uid,chapter_id:null,subtopic_id:st.id,category:n.category,title:n.title||'',content:n.content||'',pages:n.pages||'',created_at:n.createdAt||new Date().toISOString(),updated_at:n.updatedAt||new Date().toISOString()})}}}
- for(const c of connections)connectionRows.push({id:c.id,user_id:uid,from_note_id:c.from,to_note_id:c.to,type:c.type||'related',reason:c.reason||'',created_at:c.createdAt||new Date().toISOString()});
- for(const [table,rows] of [['chapters',chapterRows],['subtopics',subRows],['notes',noteRows],['connections',connectionRows],['reading_history',historyRows]])if(rows.length){const {error}=await supabaseClient.from(table).insert(rows);cloudError(error)}
+
+function scheduleCloudSync(){
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer=setTimeout(()=>{
+    cloudSyncChain=cloudSyncChain.then(pushToCloud).catch(e=>{
+      console.error(e);
+      toast('Erro ao sincronizar: '+(e.message||'verifique sua conexão'));
+    });
+  },450);
 }
-function scheduleCloudSync(){clearTimeout(cloudSyncTimer);cloudSyncTimer=setTimeout(()=>{cloudSyncChain=cloudSyncChain.then(replaceCloudSnapshot).catch(e=>{console.error(e);toast('Erro ao sincronizar: '+(e.message||'verifique sua conexão'))})},450)}
-async function clearCloudForFirstUse(){const uid=currentUser.id;for(const table of ['connections','notes','subtopics','chapters','reading_history','books']){const {error}=await supabaseClient.from(table).delete().eq('user_id',uid);cloudError(error)}const {data:files,error:listError}=await supabaseClient.storage.from('book-covers').list(uid,{limit:1000});if(listError)cloudError(listError);if(files?.length){const {error}=await supabaseClient.storage.from('book-covers').remove(files.map(f=>uid+'/'+f.name));cloudError(error)}const {error}=await supabaseClient.auth.updateUser({data:{sinapse_cloud_initialized:true}});cloudError(error)}
-async function loadCloudSnapshot(){const uid=currentUser.id;const queries=await Promise.all(['books','chapters','subtopics','notes','connections','reading_history'].map(table=>supabaseClient.from(table).select('*').eq('user_id',uid)));queries.forEach(r=>cloudError(r.error));const [br,cr,sr,nr,cor,hr]=queries;const bookMap=new Map(br.data.map(r=>[r.id,{id:r.id,title:r.title,author:r.author,category:r.category,description:r.description,status:r.status,ownership:r.ownership,coverColor:r.cover_color,coverText:r.cover_text,rating:r.rating,currentPage:r.current_page,totalPages:r.total_pages,startedAt:r.started_at,completedAt:r.completed_at,opinion:r.opinion,learnings:r.learnings,strengths:r.strengths,weaknesses:r.weaknesses,keywords:r.keywords||[],acquiredAt:r.acquired_at,createdAt:r.created_at,updatedAt:r.updated_at,lastActivityAt:r.last_activity_at,history:[],chapters:[],_cloudCoverPath:r.cover_image||null}]));
- for(const r of cr.data){const b=bookMap.get(r.book_id);if(b)b.chapters.push({id:r.id,title:r.title,pages:r.pages,summary:r.summary,understanding:r.understanding,learningQuestion:r.learning_question||'',application:r.application||'',topics:r.topics||[],notes:[],subtopics:[],createdAt:r.created_at,updatedAt:r.updated_at})}
- const chapterMap=new Map();for(const b of bookMap.values())for(const c of b.chapters)chapterMap.set(c.id,c);
- for(const r of sr.data){const c=chapterMap.get(r.chapter_id);if(c)c.subtopics.push({id:r.id,title:r.title,pages:r.pages,summary:r.summary,understanding:r.understanding,application:r.application||'',color:r.color,topics:r.topics||[],notes:[],createdAt:r.created_at,updatedAt:r.updated_at,_position:r.position??0})}for(const b of bookMap.values())for(const c of b.chapters)c.subtopics.sort((a,b)=>(a._position??0)-(b._position??0));
- const subMap=new Map();for(const b of bookMap.values())for(const c of b.chapters)for(const st of c.subtopics)subMap.set(st.id,st);
- for(const r of nr.data){const target=r.subtopic_id?subMap.get(r.subtopic_id):chapterMap.get(r.chapter_id);if(target){target.notes.push({id:r.id,category:r.category,title:r.title,content:r.content,pages:r.pages,createdAt:r.created_at,updatedAt:r.updated_at})}}
- for(const r of hr.data){const b=bookMap.get(r.book_id);if(b)b.history.push({id:r.id,type:r.type,details:r.details,at:r.occurred_at})}
- connections=cor.data.map(r=>({id:r.id,from:r.from_note_id,to:r.to_note_id,type:r.type,reason:r.reason,createdAt:r.created_at}));
- books=[...bookMap.values()];for(const b of books){ensureBookData(b);if(b._cloudCoverPath){const {data,error}=await supabaseClient.storage.from('book-covers').createSignedUrl(b._cloudCoverPath,3600);if(!error&&data?.signedUrl)b.coverImage=data.signedUrl}}
- cloudLoading=true;localStorage.setItem(KEY,JSON.stringify(books));localStorage.setItem(CONNECTION_KEY,JSON.stringify(connections));cloudLoading=false;render();
+
+async function pushToCloud(){
+  if(!currentUser||!cloudReady||cloudLoading)return;
+  const uid=currentUser.id;
+
+  // --- Upsert books (with covers) ---
+  const bookRows=[];
+  for(const b of books){
+    const cover=await uploadBookCover(b);
+    const row=toBookRow(b);
+    row.cover_image=cover;
+    bookRows.push(row);
+  }
+  if(bookRows.length){
+    const {error}=await supabaseClient.from('books').upsert(bookRows,{onConflict:'id'});
+    cloudError(error);
+  }
+
+  // --- Collect nested rows ---
+  const chapterRows=[],subRows=[],noteRows=[],historyRows=[],connectionRows=[];
+  for(const b of books){
+    for(const h of (b.history||[])){
+      historyRows.push({
+        id:h.id,user_id:uid,book_id:b.id,
+        type:h.type||'activity',details:h.details||'',
+        occurred_at:h.at||h.occurred_at||new Date().toISOString()
+      });
+    }
+    for(const c of (b.chapters||[])){
+      chapterRows.push({
+        id:c.id,user_id:uid,book_id:b.id,
+        title:c.title||'',pages:c.pages||'',
+        summary:c.summary||'',understanding:c.understanding||'',
+        learning_question:c.learningQuestion||'',application:c.application||'',
+        topics:c.topics||[],
+        created_at:c.createdAt||new Date().toISOString(),
+        updated_at:c.updatedAt||new Date().toISOString()
+      });
+      for(const n of (c.notes||[])){
+        noteRows.push({
+          id:n.id,user_id:uid,chapter_id:c.id,subtopic_id:null,
+          category:n.category,title:n.title||'',content:n.content||'',
+          pages:n.pages||'',
+          created_at:n.createdAt||new Date().toISOString(),
+          updated_at:n.updatedAt||new Date().toISOString()
+        });
+      }
+      for(let i=0;i<(c.subtopics||[]).length;i++){
+        const st=c.subtopics[i];
+        subRows.push({
+          id:st.id,user_id:uid,chapter_id:c.id,
+          title:st.title||'',pages:st.pages||'',
+          summary:st.summary||'',understanding:st.understanding||'',
+          application:st.application||'',color:st.color||'blue',
+          topics:st.topics||[],position:i,
+          created_at:st.createdAt||new Date().toISOString(),
+          updated_at:st.updatedAt||new Date().toISOString()
+        });
+        for(const n of (st.notes||[])){
+          noteRows.push({
+            id:n.id,user_id:uid,chapter_id:null,subtopic_id:st.id,
+            category:n.category,title:n.title||'',content:n.content||'',
+            pages:n.pages||'',
+            created_at:n.createdAt||new Date().toISOString(),
+            updated_at:n.updatedAt||new Date().toISOString()
+          });
+        }
+      }
+    }
+  }
+  for(const c of connections){
+    connectionRows.push({
+      id:c.id,user_id:uid,
+      from_note_id:c.from,to_note_id:c.to,
+      type:c.type||'related',reason:c.reason||'',
+      created_at:c.createdAt||new Date().toISOString()
+    });
+  }
+
+  // --- Upsert nested tables ---
+  for(const [table,rows] of [
+    ['chapters',chapterRows],
+    ['subtopics',subRows],
+    ['notes',noteRows],
+    ['connections',connectionRows],
+    ['reading_history',historyRows]
+  ]){
+    if(rows.length){
+      const {error}=await supabaseClient.from(table).upsert(rows,{onConflict:'id'});
+      cloudError(error);
+    }
+  }
+
+  // --- Delete only explicitly removed IDs ---
+  const delMap={
+    books:deleted.books||[],
+    chapters:deleted.chapters||[],
+    subtopics:deleted.subtopics||[],
+    notes:deleted.notes||[],
+    connections:deleted.connections||[],
+    reading_history:deleted.reading_history||[]
+  };
+  for(const [table,ids] of Object.entries(delMap)){
+    if(!ids.length)continue;
+    // delete in chunks to avoid URL length limits
+    for(let i=0;i<ids.length;i+=50){
+      const chunk=ids.slice(i,i+50);
+      const {error}=await supabaseClient.from(table).delete().in('id',chunk).eq('user_id',uid);
+      cloudError(error);
+    }
+  }
+  // clear deleted lists after successful push
+  deleted={books:[],chapters:[],subtopics:[],notes:[],connections:[],reading_history:[]};
+  persistDeleted();
 }
+
+async function clearCloudForFirstUse(){
+  const uid=currentUser.id;
+  // Only wipe cloud if the user has no local data yet (true first use)
+  const hasLocal=books.length>0||connections.length>0;
+  if(!hasLocal){
+    for(const table of ['connections','notes','subtopics','chapters','reading_history','books']){
+      const {error}=await supabaseClient.from(table).delete().eq('user_id',uid);
+      cloudError(error);
+    }
+    const {data:files,error:listError}=await supabaseClient.storage.from('book-covers').list(uid,{limit:1000});
+    if(listError)cloudError(listError);
+    if(files?.length){
+      const {error}=await supabaseClient.storage.from('book-covers').remove(files.map(f=>uid+'/'+f.name));
+      cloudError(error);
+    }
+  }
+  const {error}=await supabaseClient.auth.updateUser({data:{sinapse_cloud_initialized:true}});
+  cloudError(error);
+}
+
+async function loadCloudSnapshot(){
+  const uid=currentUser.id;
+  let queries;
+  try{
+    queries=await Promise.all(
+      ['books','chapters','subtopics','notes','connections','reading_history']
+        .map(table=>supabaseClient.from(table).select('*').eq('user_id',uid))
+    );
+  }catch(networkErr){
+    console.error('Falha de rede ao carregar nuvem:',networkErr);
+    toast('Sem conexão. Mantendo dados locais.');
+    return; // keep local data
+  }
+  // If any query hard-failed, keep local
+  if(queries.some(r=>r.error)){
+    console.error('Erro ao carregar nuvem:',queries.map(r=>r.error).filter(Boolean));
+    toast('Não foi possível carregar a nuvem. Mantendo dados locais.');
+    return;
+  }
+  const [br,cr,sr,nr,cor,hr]=queries;
+  const serverEmpty=!br.data?.length && !cr.data?.length && !nr.data?.length;
+
+  // If server is empty and we already have local data → keep local, will push later
+  if(serverEmpty && (books.length>0 || connections.length>0)){
+    toast('Nuvem vazia. Seus dados locais serão enviados.');
+    return;
+  }
+
+  // Build server-side tree
+  const bookMap=new Map(br.data.map(r=>[r.id,{
+    id:r.id,title:r.title,author:r.author,category:r.category,description:r.description,
+    status:r.status,ownership:r.ownership,coverColor:r.cover_color,coverText:r.cover_text,
+    rating:r.rating,currentPage:r.current_page,totalPages:r.total_pages,
+    startedAt:r.started_at,completedAt:r.completed_at,
+    opinion:r.opinion,learnings:r.learnings,strengths:r.strengths,weaknesses:r.weaknesses,
+    keywords:r.keywords||[],acquiredAt:r.acquired_at,
+    createdAt:r.created_at,updatedAt:r.updated_at,lastActivityAt:r.last_activity_at,
+    history:[],chapters:[],_cloudCoverPath:r.cover_image||null
+  }]));
+
+  for(const r of cr.data){
+    const b=bookMap.get(r.book_id);
+    if(b)b.chapters.push({
+      id:r.id,title:r.title,pages:r.pages,summary:r.summary,
+      understanding:r.understanding,learningQuestion:r.learning_question||'',
+      application:r.application||'',topics:r.topics||[],
+      notes:[],subtopics:[],
+      createdAt:r.created_at,updatedAt:r.updated_at
+    });
+  }
+  const chapterMap=new Map();
+  for(const b of bookMap.values())for(const c of b.chapters)chapterMap.set(c.id,c);
+
+  for(const r of sr.data){
+    const c=chapterMap.get(r.chapter_id);
+    if(c)c.subtopics.push({
+      id:r.id,title:r.title,pages:r.pages,summary:r.summary,
+      understanding:r.understanding,application:r.application||'',
+      color:r.color,topics:r.topics||[],notes:[],
+      createdAt:r.created_at,updatedAt:r.updated_at,_position:r.position??0
+    });
+  }
+  for(const b of bookMap.values())for(const c of b.chapters)
+    c.subtopics.sort((a,b)=>(a._position??0)-(b._position??0));
+
+  const subMap=new Map();
+  for(const b of bookMap.values())for(const c of b.chapters)for(const st of c.subtopics)subMap.set(st.id,st);
+
+  for(const r of nr.data){
+    const target=r.subtopic_id?subMap.get(r.subtopic_id):chapterMap.get(r.chapter_id);
+    if(target)target.notes.push({
+      id:r.id,category:r.category,title:r.title,content:r.content,pages:r.pages,
+      createdAt:r.created_at,updatedAt:r.updated_at
+    });
+  }
+  for(const r of hr.data){
+    const b=bookMap.get(r.book_id);
+    if(b)b.history.push({id:r.id,type:r.type,details:r.details,at:r.occurred_at});
+  }
+
+  const serverConnections=cor.data.map(r=>({
+    id:r.id,from:r.from_note_id,to:r.to_note_id,type:r.type,reason:r.reason,createdAt:r.created_at
+  }));
+
+  // --- Merge strategy: newer updatedAt wins per book ---
+  const localMap=new Map(books.map(b=>[b.id,b]));
+  const mergedBooks=[];
+  const allIds=new Set([...localMap.keys(),...bookMap.keys()]);
+
+  for(const id of allIds){
+    const local=localMap.get(id);
+    const remote=bookMap.get(id);
+    if(local && remote){
+      const localT=new Date(local.updatedAt||local.createdAt||0).getTime();
+      const remoteT=new Date(remote.updatedAt||remote.createdAt||0).getTime();
+      mergedBooks.push(localT>=remoteT ? local : remote);
+    }else{
+      mergedBooks.push(local||remote);
+    }
+  }
+
+  // Connections: union by id, prefer local if conflict
+  const connMap=new Map(connections.map(c=>[c.id,c]));
+  for(const c of serverConnections){
+    if(!connMap.has(c.id))connMap.set(c.id,c);
+  }
+
+  cloudLoading=true;
+  books=mergedBooks;
+  connections=[...connMap.values()];
+  books.forEach(ensureBookData);
+
+  // Resolve cover signed URLs
+  for(const b of books){
+    if(b._cloudCoverPath && !b.coverImage){
+      try{
+        const {data,error}=await supabaseClient.storage.from('book-covers').createSignedUrl(b._cloudCoverPath,3600);
+        if(!error&&data?.signedUrl)b.coverImage=data.signedUrl;
+      }catch(_){}
+    }
+  }
+
+  localStorage.setItem(KEY,JSON.stringify(books));
+  localStorage.setItem(CONNECTION_KEY,JSON.stringify(connections));
+  cloudLoading=false;
+  render();
+}
+
 async function initializeCloudForUser(){if(!currentUser||cloudReady||window._cloudInitRunning)return;window._cloudInitRunning=true;try{const initialized=!!currentUser.user_metadata?.sinapse_cloud_initialized;if(!initialized){await clearCloudForFirstUse()}await loadCloudSnapshot();cloudReady=true;toast('Biblioteca sincronizada com a nuvem.')}finally{window._cloudInitRunning=false}}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.remove('opacity-0');setTimeout(()=>t.classList.add('opacity-0'),2300)}
 function dateLabel(v){return new Date(v).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}
@@ -383,13 +640,13 @@ function openSubtopicPage(bookId,chapterId,subId){selectedBook=books.find(b=>b.i
 function subtopicView(){const b=selectedBook,ch=selectedChapter,sub=selectedSubtopic;if(!b||!ch||!sub){currentView='book';return bookView()}const topics=sub.topics||[],notes=sub.notes||[];return `<button class="text-xs font-semibold text-slate-500 mb-5" onclick="openChapter('${b.id}','${ch.id}')">← Voltar para ${esc(ch.title)}</button><div class="mb-6"><div class="text-xs font-semibold text-[#7890AA] uppercase tracking-wide mb-2">${esc(b.title)} · ${esc(ch.title)}</div><h1 class="text-2xl font-extrabold text-[#142B4A]">${esc(sub.title)}</h1><p class="text-sm text-slate-500 mt-1">Área exclusiva deste subcapítulo.</p></div><form class="space-y-5" onsubmit="saveSubtopicPage(event)"><section class="bg-white border border-slate-200 rounded-2xl p-5"><label class="block text-xs font-semibold text-slate-600 mb-1.5">Título do subcapítulo</label><input name="title" required maxlength="140" class="field" value="${esc(sub.title)}"><label class="block text-xs font-semibold text-slate-600 mt-4 mb-1.5">Páginas / referência</label><input name="pages" class="field" maxlength="80" placeholder="Ex.: páginas 15 a 19" value="${esc(sub.pages||'')}"><label class="block text-xs font-semibold text-slate-600 mt-4 mb-1.5">Cor de identificação</label><select name="color" class="field"><option value="yellow" ${(sub.color||'blue')==='yellow'?'selected':''}>🟡 Amarelo — Ideias e insights</option><option value="blue" ${(sub.color||'blue')==='blue'?'selected':''}>🔵 Azul — Conhecimentos e informações</option><option value="orange" ${(sub.color||'blue')==='orange'?'selected':''}>🟠 Laranja — Fundamentos e aplicações</option><option value="red" ${(sub.color||'blue')==='red'?'selected':''}>🔴 Vermelho — Problemas e alertas</option></select></section><section class="bg-white border border-slate-200 rounded-2xl p-5"><h2 class="font-bold text-[#142B4A] mb-1">O que encontrei de importante?</h2><p class="text-xs text-slate-400 mb-3">Registre a ideia ou informação central desta parte.</p><textarea name="summary" rows="5" class="field" placeholder="Qual é o principal ensinamento desta parte?">${esc(sub.summary||'')}</textarea></section><section class="bg-white border border-slate-200 rounded-2xl p-5"><h2 class="font-bold text-[#142B4A] mb-1">O que eu entendi?</h2><p class="text-xs text-slate-400 mb-3">Explique com suas próprias palavras.</p><textarea name="understanding" rows="4" class="field" placeholder="Como você explicaria esse ensinamento?">${esc(sub.understanding||'')}</textarea></section><section class="bg-white border border-slate-200 rounded-2xl p-5"><h2 class="font-bold text-[#142B4A] mb-1">O que posso colocar em prática?</h2><p class="text-xs text-slate-400 mb-3">Uma ação concreta para hoje ou para esta semana.</p><textarea name="application" rows="3" class="field" placeholder="Como posso aplicar esse aprendizado?">${esc(sub.application||'')}</textarea></section><section class="bg-white border border-slate-200 rounded-2xl p-5"><h2 class="font-bold text-[#142B4A] mb-2">Palavras-chave e assuntos</h2><input name="topics" class="field" placeholder="Separe por vírgulas" value="${esc(topics.join(', '))}"></section><div class="flex justify-end gap-2"><button type="button" class="btn-secondary" onclick="openChapter('${b.id}','${ch.id}')">Cancelar</button><button class="btn-primary" type="submit">Salvar subcapítulo</button></div></form><section class="bg-white border border-slate-200 rounded-2xl p-5 mt-5"><div class="flex items-center justify-between gap-3 mb-4"><div><h2 class="font-bold text-[#142B4A]">Anotações deste subcapítulo</h2><p class="text-xs text-slate-400 mt-1">Registre ideias, informações, aplicações e problemas.</p></div><button type="button" class="btn-primary" onclick="openNoteForm(null,'subtopic')">＋ Nova anotação</button></div>${notes.length?`<div class="space-y-3">${notes.map(n=>noteCard(n,'subtopic')).join('')}</div>`:`<div class="border border-dashed border-slate-300 rounded-xl p-6 text-center text-xs text-slate-400">Nenhuma anotação registrada nesta parte.</div>`}</section><div class="flex justify-end mt-5"><button class="text-xs text-red-600" onclick="deleteSubtopic('${sub.id}')">Excluir subcapítulo</button></div>`}
 function saveSubtopicPage(e){e.preventDefault();try{const bookId=selectedBook?.id,chapterId=selectedChapter?.id,subId=selectedSubtopic?.id;if(!bookId||!chapterId||!subId)throw new Error('Referência do subcapítulo perdida. Volte e abra novamente.');const book=books.find(b=>b.id===bookId);const chapter=(book?.chapters||[]).find(c=>c.id===chapterId);const sub=(chapter?.subtopics||[]).find(s=>s.id===subId);if(!sub)throw new Error('Subcapítulo não encontrado.');selectedBook=book;selectedChapter=chapter;selectedSubtopic=sub;const f=new FormData(e.target);Object.assign(sub,{title:f.get('title').trim(),pages:f.get('pages').trim(),color:f.get('color')||'blue',summary:f.get('summary').trim(),understanding:f.get('understanding').trim(),application:f.get('application').trim(),topics:String(f.get('topics')||'').split(',').map(x=>x.trim()).filter(Boolean),updatedAt:new Date().toISOString()});addBookEvent(book,'session','Conteúdo de um subtítulo atualizado.');persist();openChapter(book.id,chapter.id);toast('Subcapítulo salvo. Você voltou ao capítulo.')}catch(err){console.error(err);toast('Não foi possível salvar o subcapítulo: '+(err?.message||'erro'))}}
 function moveSubtopic(bookId,chapterId,subId,direction){const book=books.find(b=>b.id===bookId);const chapter=book?.chapters?.find(c=>c.id===chapterId);if(!chapter)return;const list=chapter.subtopics||[];const index=list.findIndex(x=>x.id===subId);const target=index+direction;if(index<0||target<0||target>=list.length)return;[list[index],list[target]]=[list[target],list[index]];chapter.subtopics=list;persist();selectedBook=book;selectedChapter=chapter;currentView='book';render();toast('Ordem dos subtítulos atualizada')}
-function deleteSubtopic(id){if(!confirm('Excluir este subtítulo e suas anotações?'))return;selectedChapter.subtopics=(selectedChapter.subtopics||[]).filter(x=>x.id!==id);persist();openChapter(selectedBook.id,selectedChapter.id);toast('Subcapítulo excluído')}
+function deleteSubtopic(id){if(!confirm('Excluir este subtítulo e suas anotações?'))return;const sub=(selectedChapter.subtopics||[]).find(x=>x.id===id);if(sub){markDeleted('subtopics',sub.id);for(const n of (sub.notes||[]))markDeleted('notes',n.id)}selectedChapter.subtopics=(selectedChapter.subtopics||[]).filter(x=>x.id!==id);persist();openChapter(selectedBook.id,selectedChapter.id);toast('Subcapítulo excluído')}
 function openNoteForm(note=null,scope='chapter'){const n=note||{};selectedNoteScope=scope;const dot={yellow:'🟡',blue:'🔵',orange:'🟠',red:'🔴'};const options=Object.entries(catInfo).map(([k,c])=>`<option value="${k}" ${n.category===k?'selected':''}>${dot[k]} ${c.label}</option>`).join('');$('#modalRoot').innerHTML=`<div class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4" onclick="if(event.target===this)closeModal()"><div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[92vh] overflow-y-auto"><div class="p-5 border-b border-slate-100"><h2 class="font-bold text-[#142B4A]">${n.id?'Editar anotação':'Nova anotação'}</h2><p class="text-[11px] text-slate-400 mt-1">Escolha uma categoria principal para este registro.</p></div><form class="p-5 space-y-4" onsubmit="saveNote(event,'${n.id||''}','${scope}')"><div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Categoria</label><select name="category" class="field">${options}</select></div><div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Título</label><input name="title" class="field" maxlength="120" placeholder="Nome ou ideia principal" value="${esc(n.title||'')}"></div><div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Anotação *</label><textarea name="content" required rows="5" class="field resize-y" placeholder="Registre seu aprendizado...">${esc(n.content||'')}</textarea></div><div><label class="block text-xs font-semibold text-slate-600 mb-1.5">Página / referência (opcional)</label><input name="pages" class="field" maxlength="80" placeholder="Ex.: página 23" value="${esc(n.pages||'')}"></div><div class="flex justify-end gap-2"><button type="button" class="btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn-primary" type="submit">Salvar anotação</button></div></form></div></div>`}
 let selectedNoteScope='chapter';
 function noteCollection(scope){if(scope==='subtopic'){selectedSubtopic=selectedSubtopic||null;return selectedSubtopic?(selectedSubtopic.notes||(selectedSubtopic.notes=[])):[]}selectedChapter.notes=selectedChapter.notes||[];return selectedChapter.notes}
 function saveNote(e,id,scope='chapter'){e.preventDefault();const f=new FormData(e.target),collection=noteCollection(scope);const data={category:f.get('category'),title:f.get('title').trim(),content:f.get('content').trim(),pages:f.get('pages').trim(),updatedAt:new Date().toISOString()};if(id){const n=collection.find(x=>x.id===id);if(n)Object.assign(n,data)}else collection.unshift({...data,id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),createdAt:new Date().toISOString()});addBookEvent(selectedBook,'session','Anotação registrada no livro.');persist();closeModal();render();toast(id?'Anotação atualizada':'Anotação salva')}
 function editNote(id,scope='chapter'){const collection=noteCollection(scope),n=collection.find(x=>x.id===id);if(n)openNoteForm(n,scope)}
-function deleteNote(id,scope='chapter'){if(!confirm('Excluir esta anotação?'))return;const collection=noteCollection(scope);const updated=collection.filter(n=>n.id!==id);if(scope==='subtopic')selectedSubtopic.notes=updated;else selectedChapter.notes=updated;persist();render();toast('Anotação excluída')}
+function deleteNote(id,scope='chapter'){if(!confirm('Excluir esta anotação?'))return;markDeleted('notes',id);const collection=noteCollection(scope);const updated=collection.filter(n=>n.id!==id);if(scope==='subtopic')selectedSubtopic.notes=updated;else selectedChapter.notes=updated;persist();render();toast('Anotação excluída')}
 let knowledgeFilter='all';
 function setKnowledgeFilter(filter){knowledgeFilter=filter;render()}
 function knowledgeView(){
@@ -445,7 +702,7 @@ function saveConnection(e){
  connections.unshift({id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),from,to,type:f.get('type')||'related',reason:f.get('reason').trim(),createdAt:new Date().toISOString()});
  persistConnections();render();toast('Conexão salva');
 }
-function deleteConnection(id){if(!confirm('Excluir esta conexão? As anotações originais serão mantidas.'))return;connections=connections.filter(c=>c.id!==id);persistConnections();render();toast('Conexão excluída')}
+function deleteConnection(id){if(!confirm('Excluir esta conexão? As anotações originais serão mantidas.'))return;markDeleted('connections',id);connections=connections.filter(c=>c.id!==id);persistConnections();render();toast('Conexão excluída')}
 function placeholder(title,desc,icon){return `<div class="max-w-3xl"><div class="w-12 h-12 rounded-2xl bg-[#EAF0F7] text-[#315779] flex items-center justify-center text-2xl mb-5">${icon}</div><div class="text-xs font-semibold text-[#7890AA] uppercase tracking-[.15em] mb-2">Em construção</div><h1 class="text-2xl font-extrabold text-[#142B4A]">${title}</h1><p class="text-sm text-slate-500 mt-2 max-w-xl leading-relaxed">${desc}</p><div class="mt-7 bg-white border border-slate-200 rounded-2xl p-5"><div class="text-xs font-bold text-slate-600 mb-2">Esta área será ativada nas próximas versões</div><p class="text-xs text-slate-400 leading-relaxed">Estamos construindo o Sinapse IA por etapas. Seus recursos serão adicionados e testados progressivamente.</p></div></div>`}
 function openBookModal(id=''){
  const b=id?books.find(x=>x.id===id):null;
@@ -472,7 +729,7 @@ function acquireBook(id){const b=books.find(x=>x.id===id);if(!b)return;b.ownersh
 function recordReadingActivity(id){const b=books.find(x=>x.id===id);if(!b)return;const pages=prompt('Até qual página você leu? (opcional)')||'';const note=prompt('Quer registrar uma observação desta sessão? (opcional)')||'';if(b.status==='want'||b.status==='paused')b.status='reading';addBookEvent(b,'session',[pages?`Página: ${pages}`:'',note].filter(Boolean).join(' · ')||'Sessão de leitura registrada.');render();toast('Atividade de leitura registrada')}
 function openBookHistory(id){const b=books.find(x=>x.id===id);if(!b)return;const events=b.history||[];$('#modalRoot').innerHTML=`<div class="modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4" onclick="if(event.target===this)closeModal()"><div class="bg-white rounded-2xl w-full max-w-xl shadow-2xl max-h-[90vh] overflow-y-auto"><div class="p-5 border-b"><h2 class="font-bold text-[#142B4A]">Histórico de leitura</h2><p class="text-xs text-slate-400 mt-1">${esc(b.title)}</p></div><div class="p-5 space-y-3">${events.length?events.map(e=>`<div class="border-l-2 border-[#9AAFC4] pl-3 py-1"><div class="text-xs font-semibold text-slate-700">${({start:'Início da leitura',resume:'Retomada da leitura',session:'Sessão de leitura',pause:'Leitura pausada',complete:'Leitura concluída',abandon:'Leitura abandonada',status:'Atualização de status',acquire:'Livro adquirido',progress:'Progresso atualizado'}[e.type]||'Registro')}</div><div class="text-[11px] text-slate-400">${dateLabel(e.at)}</div>${e.details?`<p class="text-xs text-slate-600 mt-1">${esc(e.details)}</p>`:''}</div>`).join(''):`<p class="text-xs text-slate-400">Ainda não há eventos registrados. O histórico começa a ser preenchido a partir das próximas atividades.</p>`}</div><div class="p-5 border-t flex justify-end"><button class="btn-secondary" onclick="closeModal()">Fechar</button></div></div></div>`}
 function addChapter(id){const title=prompt('Nome do capítulo ou tema:');if(!title||!title.trim())return;const b=books.find(x=>x.id===id);b.chapters=b.chapters||[];const ch={id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),title:title.trim(),learningQuestion:'',summary:'',understanding:'',application:'',topics:[],notes:[]};b.chapters.push(ch);persist();selectedBook=b;selectedChapter=ch;currentView='chapter';render();toast('Capítulo criado. Registre seu conteúdo.')}
-function deleteBook(id){if(!confirm('Excluir este livro? Esta ação não poderá ser desfeita.'))return;books=books.filter(b=>b.id!==id);persist();setView('library');toast('Livro excluído')}
+function deleteBook(id){if(!confirm('Excluir este livro? Esta ação não poderá ser desfeita.'))return;const book=books.find(b=>b.id===id);if(book){markDeleted('books',book.id);for(const c of (book.chapters||[])){markDeleted('chapters',c.id);for(const n of (c.notes||[]))markDeleted('notes',n.id);for(const st of (c.subtopics||[])){markDeleted('subtopics',st.id);for(const n of (st.notes||[]))markDeleted('notes',n.id)}}for(const h of (book.history||[]))markDeleted('reading_history',h.id)}books=books.filter(b=>b.id!==id);persist();setView('library');toast('Livro excluído')}
 document.addEventListener('click',e=>{const nav=e.target.closest('[data-view]');if(nav){e.preventDefault();setView(nav.dataset.view)}});
 /* submit do chapterForm agora é tratado via onsubmit no formulário */
 $('#mobileAdd').addEventListener('click',()=>openBookModal());
