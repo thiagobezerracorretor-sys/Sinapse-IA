@@ -118,10 +118,14 @@
 const KEY='sinapse-mvp-books-v01';
 const CONNECTION_KEY='sinapse-mvp-connections-v01';
 const DELETED_KEY='sinapse-mvp-deleted-v01';
+const SYNCED_IDS_KEY='sinapse-mvp-synced-ids-v01';
 function readDeleted(){try{const d=JSON.parse(localStorage.getItem(DELETED_KEY))||{};return{books:d.books||[],chapters:d.chapters||[],subtopics:d.subtopics||[],notes:d.notes||[],connections:d.connections||[],reading_history:d.reading_history||[]}}catch{return{books:[],chapters:[],subtopics:[],notes:[],connections:[],reading_history:[]}}}
 function persistDeleted(){localStorage.setItem(DELETED_KEY,JSON.stringify(deleted))}
 function markDeleted(table,id){if(!id)return;if(!deleted[table])deleted[table]=[];if(!deleted[table].includes(id)){deleted[table].push(id);persistDeleted()}}
+function readSyncedIds(){try{return JSON.parse(localStorage.getItem(SYNCED_IDS_KEY))||{books:[],chapters:[],subtopics:[],notes:[],connections:[],reading_history:[]}}catch{return{books:[],chapters:[],subtopics:[],notes:[],connections:[],reading_history:[]}}}
+function persistSyncedIds(){localStorage.setItem(SYNCED_IDS_KEY,JSON.stringify(syncedIds))}
 let deleted=readDeleted();
+let syncedIds=readSyncedIds();
 const CATEGORY_KEYWORDS={
  'Desenvolvimento Pessoal':['Mentalidade','Hábitos','Disciplina','Potencial','Mudança'],
  'Psicologia e Comportamento':['Mente','Emoções','Comportamento','Personalidade','Relações'],
@@ -280,6 +284,20 @@ async function pushToCloud(){
   // clear deleted lists after successful push
   deleted={books:[],chapters:[],subtopics:[],notes:[],connections:[],reading_history:[]};
   persistDeleted();
+
+  // refresh known server ids from what we just pushed
+  syncedIds={
+    books:books.map(b=>b.id),
+    chapters:books.flatMap(b=>(b.chapters||[]).map(ch=>ch.id)),
+    subtopics:books.flatMap(b=>(b.chapters||[]).flatMap(ch=>(ch.subtopics||[]).map(s=>s.id))),
+    notes:books.flatMap(b=>(b.chapters||[]).flatMap(ch=>[
+      ...(ch.notes||[]).map(n=>n.id),
+      ...(ch.subtopics||[]).flatMap(s=>(s.notes||[]).map(n=>n.id))
+    ])),
+    connections:connections.map(x=>x.id),
+    reading_history:books.flatMap(b=>(b.history||[]).map(h=>h.id))
+  };
+  persistSyncedIds();
 }
 
 async function clearCloudForFirstUse(){
@@ -468,10 +486,90 @@ async function loadCloudSnapshot(){
   for(const c of connections) connMap.set(c.id,c);
   for(const c of serverConnections){ if(!connMap.has(c.id)) connMap.set(c.id,c); }
 
+  // Apply local tombstones + drop items deleted on other devices
+  const delBooks=new Set(deleted.books||[]);
+  const delChapters=new Set(deleted.chapters||[]);
+  const delSubs=new Set(deleted.subtopics||[]);
+  const delNotes=new Set(deleted.notes||[]);
+  const delConns=new Set(deleted.connections||[]);
+  const delHist=new Set(deleted.reading_history||[]);
+
+  const serverBookIds=new Set(bookMap.keys());
+  const serverChapterIds=new Set(chapterMap.keys());
+  const serverSubIds=new Set(subMap.keys());
+  const serverNoteIds=new Set();
+  for(const b of bookMap.values()){
+    for(const ch of (b.chapters||[])){
+      for(const n of (ch.notes||[])) serverNoteIds.add(n.id);
+      for(const st of (ch.subtopics||[])) for(const n of (st.notes||[])) serverNoteIds.add(n.id);
+    }
+  }
+  const serverConnIds=new Set(serverConnections.map(x=>x.id));
+
+  const prevBooks=new Set(syncedIds.books||[]);
+  const prevChapters=new Set(syncedIds.chapters||[]);
+  const prevSubs=new Set(syncedIds.subtopics||[]);
+  const prevNotes=new Set(syncedIds.notes||[]);
+  const prevConns=new Set(syncedIds.connections||[]);
+
+  mergedBooks=mergedBooks.filter(b=>{
+    if(delBooks.has(b.id)) return false;
+    // was on server before, now gone → deleted on another device
+    if(prevBooks.has(b.id) && !serverBookIds.has(b.id)) return false;
+    return true;
+  });
+
+  for(const b of mergedBooks){
+    b.chapters=(b.chapters||[]).filter(ch=>{
+      if(delChapters.has(ch.id)) return false;
+      if(prevChapters.has(ch.id) && !serverChapterIds.has(ch.id) && serverBookIds.has(b.id)) return false;
+      return true;
+    });
+    for(const ch of b.chapters){
+      ch.notes=(ch.notes||[]).filter(n=>{
+        if(delNotes.has(n.id)) return false;
+        if(prevNotes.has(n.id) && !serverNoteIds.has(n.id) && serverChapterIds.has(ch.id)) return false;
+        return true;
+      });
+      ch.subtopics=(ch.subtopics||[]).filter(st=>{
+        if(delSubs.has(st.id)) return false;
+        if(prevSubs.has(st.id) && !serverSubIds.has(st.id) && serverChapterIds.has(ch.id)) return false;
+        return true;
+      });
+      for(const st of ch.subtopics){
+        st.notes=(st.notes||[]).filter(n=>{
+          if(delNotes.has(n.id)) return false;
+          if(prevNotes.has(n.id) && !serverNoteIds.has(n.id) && serverSubIds.has(st.id)) return false;
+          return true;
+        });
+      }
+    }
+    b.history=(b.history||[]).filter(h=>!delHist.has(h.id));
+  }
+
+  const mergedConns=[...connMap.values()].filter(x=>{
+    if(delConns.has(x.id)) return false;
+    if(prevConns.has(x.id) && !serverConnIds.has(x.id)) return false;
+    return true;
+  });
+
   cloudLoading=true;
   books=mergedBooks;
-  connections=[...connMap.values()];
+  connections=mergedConns;
   books.forEach(ensureBookData);
+
+  syncedIds={
+    books:[...new Set([...serverBookIds, ...books.map(b=>b.id)])],
+    chapters:[...new Set([...serverChapterIds, ...books.flatMap(b=>(b.chapters||[]).map(ch=>ch.id))])],
+    subtopics:[...new Set([...serverSubIds, ...books.flatMap(b=>(b.chapters||[]).flatMap(ch=>(ch.subtopics||[]).map(s=>s.id)))])],
+    notes:[...new Set([...serverNoteIds, ...books.flatMap(b=>(b.chapters||[]).flatMap(ch=>[
+      ...(ch.notes||[]).map(n=>n.id),
+      ...(ch.subtopics||[]).flatMap(s=>(s.notes||[]).map(n=>n.id))
+    ]))])],
+    connections:[...new Set([...serverConnIds, ...connections.map(x=>x.id)])],
+    reading_history:books.flatMap(b=>(b.history||[]).map(h=>h.id))
+  };
+  persistSyncedIds();
 
   // Always refresh signed cover URLs (they expire)
   for(const b of books){
@@ -483,7 +581,7 @@ async function loadCloudSnapshot(){
     }
   }
 
-    localStorage.setItem(KEY,JSON.stringify(books));
+  localStorage.setItem(KEY,JSON.stringify(books));
   localStorage.setItem(CONNECTION_KEY,JSON.stringify(connections));
   cloudLoading=false;
   render();
