@@ -386,7 +386,57 @@ async function loadCloudSnapshot(){
     id:r.id,from:r.from_note_id,to:r.to_note_id,type:r.type,reason:r.reason,createdAt:r.created_at
   }));
 
-  // --- Merge strategy: newer updatedAt wins per book ---
+  // --- Merge strategy: nested by updatedAt (book + chapters + subtopics + notes) ---
+  function ts(v){return new Date(v||0).getTime()}
+  function newer(a,b){return ts(a?.updatedAt||a?.createdAt) >= ts(b?.updatedAt||b?.createdAt) ? a : b}
+
+  function mergeNotes(localNotes, remoteNotes){
+    const map=new Map();
+    for(const n of (remoteNotes||[])) map.set(n.id,n);
+    for(const n of (localNotes||[])){
+      const r=map.get(n.id);
+      map.set(n.id, r ? newer(n,r) : n);
+    }
+    return [...map.values()];
+  }
+
+  function mergeSubtopics(localSubs, remoteSubs){
+    const map=new Map();
+    for(const s of (remoteSubs||[])) map.set(s.id,{...s, notes:s.notes||[]});
+    for(const s of (localSubs||[])){
+      const r=map.get(s.id);
+      if(!r){ map.set(s.id,{...s, notes:s.notes||[]}); continue; }
+      const base = newer(s,r);
+      const other = base===s ? r : s;
+      base.notes = mergeNotes(s.notes||[], r.notes||[]);
+      // keep position from the newer side when possible
+      map.set(s.id, base);
+    }
+    return [...map.values()].sort((a,b)=>(a._position??0)-(b._position??0));
+  }
+
+  function mergeChapters(localChs, remoteChs){
+    const map=new Map();
+    for(const ch of (remoteChs||[])) map.set(ch.id,{...ch, notes:ch.notes||[], subtopics:ch.subtopics||[]});
+    for(const ch of (localChs||[])){
+      const r=map.get(ch.id);
+      if(!r){ map.set(ch.id,{...ch, notes:ch.notes||[], subtopics:ch.subtopics||[]}); continue; }
+      const preferLocal = ts(ch.updatedAt||ch.createdAt) >= ts(r.updatedAt||r.createdAt);
+      const base = preferLocal ? {...ch} : {...r};
+      base.notes = mergeNotes(ch.notes||[], r.notes||[]);
+      base.subtopics = mergeSubtopics(ch.subtopics||[], r.subtopics||[]);
+      map.set(ch.id, base);
+    }
+    return [...map.values()];
+  }
+
+  function mergeHistory(localH, remoteH){
+    const map=new Map();
+    for(const h of (remoteH||[])) map.set(h.id,h);
+    for(const h of (localH||[])) map.set(h.id,h); // local wins on same id
+    return [...map.values()].sort((a,b)=>ts(b.at)-ts(a.at));
+  }
+
   const localMap=new Map(books.map(b=>[b.id,b]));
   const mergedBooks=[];
   const allIds=new Set([...localMap.keys(),...bookMap.keys()]);
@@ -395,36 +445,45 @@ async function loadCloudSnapshot(){
     const local=localMap.get(id);
     const remote=bookMap.get(id);
     if(local && remote){
-      const localT=new Date(local.updatedAt||local.createdAt||0).getTime();
-      const remoteT=new Date(remote.updatedAt||remote.createdAt||0).getTime();
-      mergedBooks.push(localT>=remoteT ? local : remote);
+      // book-level fields: prefer newer by updatedAt OR lastActivityAt
+      const localScore=Math.max(ts(local.updatedAt||local.createdAt), ts(local.lastActivityAt));
+      const remoteScore=Math.max(ts(remote.updatedAt||remote.createdAt), ts(remote.lastActivityAt));
+      const base = localScore >= remoteScore ? {...local} : {...remote};
+      // always merge nested content so mobile chapter edits are not lost
+      base.chapters = mergeChapters(local.chapters||[], remote.chapters||[]);
+      base.history = mergeHistory(local.history||[], remote.history||[]);
+      // preserve cover path from either side
+      base._cloudCoverPath = base._cloudCoverPath || local._cloudCoverPath || remote._cloudCoverPath || null;
+      if(!base.coverImage && (local.coverImage||remote.coverImage)){
+        base.coverImage = localScore >= remoteScore ? (local.coverImage||remote.coverImage) : (remote.coverImage||local.coverImage);
+      }
+      mergedBooks.push(base);
     }else{
       mergedBooks.push(local||remote);
     }
   }
 
-  // Connections: union by id, prefer local if conflict
-  const connMap=new Map(connections.map(c=>[c.id,c]));
-  for(const c of serverConnections){
-    if(!connMap.has(c.id))connMap.set(c.id,c);
-  }
+  // Connections: union by id
+  const connMap=new Map();
+  for(const c of connections) connMap.set(c.id,c);
+  for(const c of serverConnections){ if(!connMap.has(c.id)) connMap.set(c.id,c); }
 
   cloudLoading=true;
   books=mergedBooks;
   connections=[...connMap.values()];
   books.forEach(ensureBookData);
 
-  // Resolve cover signed URLs
+  // Always refresh signed cover URLs (they expire)
   for(const b of books){
-    if(b._cloudCoverPath && !b.coverImage){
+    if(b._cloudCoverPath){
       try{
-        const {data,error}=await supabaseClient.storage.from('book-covers').createSignedUrl(b._cloudCoverPath,3600);
+        const {data,error}=await supabaseClient.storage.from('book-covers').createSignedUrl(b._cloudCoverPath,60*60*24*7);
         if(!error&&data?.signedUrl)b.coverImage=data.signedUrl;
       }catch(_){}
     }
   }
 
-  localStorage.setItem(KEY,JSON.stringify(books));
+    localStorage.setItem(KEY,JSON.stringify(books));
   localStorage.setItem(CONNECTION_KEY,JSON.stringify(connections));
   cloudLoading=false;
   render();
@@ -437,7 +496,7 @@ const statusLabel={want:'Quero ler',reading:'Lendo',paused:'Pausado',done:'Concl
 const ownershipLabel={owned:'Na minha estante',wishlist:'Lista de desejos'};
 function ensureBookData(b){b.ownership=b.ownership||'owned';b.history=Array.isArray(b.history)?b.history:[];b.lastActivityAt=b.lastActivityAt||((b.status==='reading'||b.status==='done')?b.updatedAt||b.createdAt:null);b.startedAt=b.startedAt||null;return b}
 books.forEach(ensureBookData);
-function addBookEvent(b,type,details=''){ensureBookData(b);const now=new Date().toISOString();if(type==='session'&&b.status==='want'){b.status='reading';if(!b.startedAt)b.startedAt=now;b.history.unshift({id:crypto.randomUUID?crypto.randomUUID():String(Date.now())+'s',type:'start',details:'Primeiro registro de leitura.',at:now})}b.history.unshift({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),type,details,at:now});b.lastActivityAt=now;if(type==='start'&&!b.startedAt)b.startedAt=now;if(type==='complete')b.completedAt=now;persist()}
+function addBookEvent(b,type,details=''){ensureBookData(b);const now=new Date().toISOString();if(type==='session'&&b.status==='want'){b.status='reading';if(!b.startedAt)b.startedAt=now;b.history.unshift({id:crypto.randomUUID?crypto.randomUUID():String(Date.now())+'s',type:'start',details:'Primeiro registro de leitura.',at:now})}b.history.unshift({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),type,details,at:now});b.lastActivityAt=now;b.updatedAt=now;if(type==='start'&&!b.startedAt)b.startedAt=now;if(type==='complete')b.completedAt=now;persist()}
 function daysSince(date){if(!date)return null;return Math.floor((Date.now()-new Date(date).getTime())/86400000)}
 function attentionLevel(b){if(b.ownership==='wishlist'||b.status!=='reading'||!b.lastActivityAt)return null;const d=daysSince(b.lastActivityAt);return d>=10?'red':d>=7?'orange':null}
 function attentionLabel(b){const d=daysSince(b.lastActivityAt);return d>=10?`${d} dias sem atividade · possível interrupção`:`${d} dias sem atividade · atenção à leitura`}
