@@ -456,7 +456,7 @@ async function loadCloudSnapshot(){
   }
 
   const localMap=new Map(books.map(b=>[b.id,b]));
-  const mergedBooks=[];
+  let mergedBooks=[];
   const allIds=new Set([...localMap.keys(),...bookMap.keys()]);
 
   for(const id of allIds){
